@@ -22,7 +22,7 @@ Keep working and you earn a **long break bonus**: by default, an extra 25 minute
 - **Light and dark mode**, and an optional **always on top** window.
 - **Remembers your progress** between launches.
 
-- The Break button and the menu bar icon show how close you are your progress towards your long break:
+- The Break button and the menu bar icon show your progress towards your long break:
 
 | Progress | Symbol |
 |---|---|
