@@ -1,5 +1,7 @@
 type Mode = "idle" | "working" | "onBreak";
 
+type TrayMode = "icon" | "breakBalance" | "currentPeriod" | "totalSession" | "longBreak";
+
 interface TimerState {
 	mode: Mode;
 	workElapsed: number;
@@ -10,6 +12,7 @@ interface TimerState {
 	longBreakThreshold: number;
 	longBreakLength: number;
 	ratio: number;
+	trayMode: TrayMode;
 }
 
 function tick(state: TimerState): TimerState 
@@ -62,4 +65,4 @@ function startIdle(state: TimerState): TimerState
 }
 
 export {tick, startWork, startBreak, startIdle}
-export type {Mode, TimerState}
+export type {Mode, TimerState, TrayMode}
