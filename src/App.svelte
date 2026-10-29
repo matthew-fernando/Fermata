@@ -102,6 +102,14 @@
     saveState(state);
   }
 
+  // 1 min rest per 5 min work, plus a 30 min long break every 2 hours
+  function usePomodoroRatio() {
+    state.ratio = 5;
+    state.longBreakThreshold = 120 * 60;
+    state.longBreakLength = 30 * 60;
+    saveState(state);
+  }
+
   function setTheme(theme: TimerState['theme']) {
     state.theme = theme;
     saveState(state);
@@ -342,6 +350,10 @@
             }} />
           <span class="hint">minutes</span>
         </div>
+
+        <div class="field preset-field">
+          <button class="preset" onclick={usePomodoroRatio}>Use Pomodoro Ratio</button>
+        </div>
       </div>
     </section>
   {/if}
@@ -385,6 +397,12 @@
     border: none;
     padding: 0;
     cursor: pointer;
+  }
+
+  /* Keep keyboard focus rings black and white instead of the system accent color */
+  button:focus-visible {
+    outline: 1px solid var(--muted);
+    outline-offset: 2px;
   }
 
   svg { display: block; width: 100%; height: 100%; }
@@ -581,8 +599,10 @@
 
   .settings-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 14px 16px;
+    /* minmax(0, ...) stops wide controls (the select, the segmented
+       control) from stretching their column past the others */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px 14px;
   }
 
   .field {
@@ -597,8 +617,29 @@
     color: var(--muted);
   }
 
+  /* Narrower columns here, so keep each label on one line */
+  .settings-view .eyebrow {
+    letter-spacing: 0.1em;
+    white-space: nowrap;
+  }
+
+  .preset-field { justify-content: flex-start; padding-top: 14px; }
+
+  .preset {
+    padding: 5px 10px;
+    font-size: 0.78rem;
+    font-style: italic;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .preset:hover { background: var(--hover); border-color: var(--muted); }
+
   select,
   input {
+    width: 100%;
+    min-width: 0;
     font-family: inherit;
     font-size: 0.9rem;
     color: var(--fg);
