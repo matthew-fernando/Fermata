@@ -34,6 +34,14 @@ fn set_tray_icon(app: tauri::AppHandle, stage: String) -> tauri::Result<()> {
 }
 
 #[tauri::command]
+fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> tauri::Result<()> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.set_always_on_top(enabled)?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn hide_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
@@ -74,7 +82,7 @@ fn start_drag(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![update_tray_text, set_tray_icon, hide_window, show_menu, quit_app, start_drag])
+        .invoke_handler(tauri::generate_handler![update_tray_text, set_tray_icon, set_always_on_top, hide_window, show_menu, quit_app, start_drag])
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => {
                 let _ = app.emit("open-settings", ());

@@ -20,6 +20,7 @@ interface TimerState {
 	ratio: number;
 	trayMode: TrayMode;
 	theme: Theme;
+	alwaysOnTop: boolean;
 }
 
 function tick(state: TimerState): TimerState 

@@ -18,7 +18,8 @@
     longBreakLength: 1500,
     ratio: 5,
     trayMode: "breakBalance",
-    theme: "dark"
+    theme: "dark",
+    alwaysOnTop: false
   });
 
   let currentView = $state<'main' | 'settings'>('main');
@@ -28,7 +29,10 @@
   $effect(() => {
     // untrack: reading `state` here must not make this effect re-run when the
     // loaded state is assigned, or it would reload forever and never tick
-    untrack(() => loadState(state)).then((loaded) => state = loaded);
+    untrack(() => loadState(state)).then((loaded) => {
+      state = loaded;
+      invoke('set_always_on_top', { enabled: state.alwaysOnTop }).catch(() => {});
+    });
     let lastTickTime = Date.now();
 
     const intervalId = setInterval(() => {
@@ -107,6 +111,12 @@
     state.ratio = 5;
     state.longBreakThreshold = 120 * 60;
     state.longBreakLength = 30 * 60;
+    saveState(state);
+  }
+
+  function setAlwaysOnTop(enabled: boolean) {
+    state.alwaysOnTop = enabled;
+    invoke('set_always_on_top', { enabled }).catch(() => {});
     saveState(state);
   }
 
@@ -313,6 +323,14 @@
           <div class="segmented" role="group" aria-label="Appearance">
             <button class:selected={state.theme === 'light'} onclick={() => setTheme('light')}>Light</button>
             <button class:selected={state.theme === 'dark'} onclick={() => setTheme('dark')}>Dark</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <span class="eyebrow">Always on Top</span>
+          <div class="segmented" role="group" aria-label="Always on Top">
+            <button class:selected={!state.alwaysOnTop} onclick={() => setAlwaysOnTop(false)}>Off</button>
+            <button class:selected={state.alwaysOnTop} onclick={() => setAlwaysOnTop(true)}>On</button>
           </div>
         </div>
 
