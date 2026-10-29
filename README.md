@@ -1,47 +1,85 @@
-# Svelte + TS + Vite
+# 𝄐 Fermata
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+A minimal menu bar break timer for macOS. As you work, you accrue break time, and longer stretches of work earn you a long break.
 
-## Recommended IDE Setup
+A *fermata* is the musical symbol for "hold this note"; a pause, and it's up the musician how long to hold it.
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+I built this app because I didn't like how Pomodoro apps worked. I always found I would be forced to take breaks when I didn't want to, or I would find myself watching the clock until I earned a break, which lowered productivity. With Fermata, you choose when to take your break, and it will let you know how much you've earned. This method has proven to be very effective in maximizing productivity.
 
-## Need an official Svelte framework?
+## How it works
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+- **Work** (♪) earns break time. With the default ratio of 5, every 5 minutes of work earns 1 minute of break.
+- **Break** (𝄐) spends it. Your **Break Balance** counts down while you rest and can go negative if you overdo it.
+- **Pause** stops the clock without earning or spending anything.
 
-## Technical considerations
+Keep working and you earn a **long break bonus**: by default, an extra 25 minutes after every 2 hours of work. The Break button and the menu bar icon show how close you are:
 
-**Why use this over SvelteKit?**
+| Progress | Symbol |
+|---|---|
+| Under 25% | Fermata |
+| 25% | Quarter rest |
+| 50% | Half rest |
+| Long break earned | Whole rest, until your next break |
 
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
+## Features
 
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
+- **Lives in the menu bar.** There's no Dock icon, and closing the window keeps the timer running.
+- **Choose what the menu bar shows:** break balance, current period, total session or long break progress (%).
+- **Adjustable:** work ratio, long break interval and long break length, plus a one-click Pomodoro preset.
+- **Light and dark mode**, and an optional **always on top** window.
+- **Remembers your progress** between launches.
 
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
+### Shortcuts
 
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
+| Shortcut | Action |
+|---|---|
+| ⌘ , | Settings |
+| ⌘ W | Close window (Fermata keeps running in the menu bar) |
+| ⌘ Q | Quit |
 
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
+## Install
 
-**Why include `.vscode/extensions.json`?**
+1. Download the latest `Fermata_x.x.x_universal.dmg` from [Releases](https://github.com/matthew-fernando/Fermata/releases/latest). It runs on both Apple Silicon and Intel Macs.
+2. Open the DMG and drag **Fermata** into **Applications**.
+3. Open Fermata. macOS will warn that it can't verify the developer, because Fermata isn't notarized by Apple. Click **Done**.
+4. Open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to Fermata.
 
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
+You only need to do this once.
 
-**Why enable `allowJs` in the TS template?**
+**If macOS says the app is "damaged":** run this in Terminal, then open Fermata again.
 
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+xattr -dr com.apple.quarantine /Applications/Fermata.app
 ```
+
+To start Fermata automatically, add it in **System Settings → General → Login Items**.
+
+## Building from source
+
+Requirements: [Node.js](https://nodejs.org/), [pnpm](https://pnpm.io/), [Rust](https://rustup.rs/), and the Xcode Command Line Tools (`xcode-select --install`).
+
+```bash
+pnpm install
+```
+
+Run in development mode. Interface changes reload instantly, and Rust changes rebuild automatically.
+
+```bash
+pnpm tauri dev
+```
+
+Build a universal app and DMG:
+
+```bash
+rustup target add x86_64-apple-darwin
+```
+
+```bash
+pnpm tauri build --target universal-apple-darwin
+```
+
+The output is in `src-tauri/target/universal-apple-darwin/release/bundle/`.
+
+## Built with
+
+[Tauri 2](https://tauri.app/), [Svelte 5](https://svelte.dev/), TypeScript and Rust.
