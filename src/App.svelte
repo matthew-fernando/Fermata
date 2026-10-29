@@ -30,7 +30,9 @@
     // untrack: reading `state` here must not make this effect re-run when the
     // loaded state is assigned, or it would reload forever and never tick
     untrack(() => loadState(state)).then((loaded) => {
-      state = loaded;
+      // Every launch starts paused; hiding and reopening the window doesn't
+      state = startIdle(loaded);
+      saveState(state);
       invoke('set_always_on_top', { enabled: state.alwaysOnTop }).catch(() => {});
     });
     let lastTickTime = Date.now();
@@ -87,16 +89,9 @@
     // Sent by the native three dots menu
     const unlistenSettings = listen('open-settings', () => { currentView = 'settings'; });
 
-    // Sent when the tray icon reopens the window: settle elapsed time, then pause
-    const unlistenShown = listen('window-shown', () => {
-      catchUp();
-      handleAction(startIdle);
-    });
-
     return () => {
       clearInterval(intervalId);
       unlistenSettings.then((unlisten) => unlisten());
-      unlistenShown.then((unlisten) => unlisten());
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   });
