@@ -40,6 +40,13 @@ Keep working and you earn a **long break bonus**: by default, an extra 25 minute
 | ⌘ Q | Quit |
 
 ## Install
+### Homebrew
+
+```bash
+brew install --cask matthew-fernando/tap/fermata
+```
+
+### Manual download
 
 1. Download the latest `Fermata_x.x.x_universal.dmg` from [Releases](https://github.com/matthew-fernando/Fermata/releases/latest). It runs on both Apple Silicon and Intel Macs.
 2. Open the DMG and drag **Fermata** into **Applications**.
