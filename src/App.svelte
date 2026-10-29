@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick, startWork, startBreak, startIdle, resetTimers, type TimerState } from './lib/timer';
+  import { tick, startWork, startBreak, startIdle, resetTimers, restStage, type TimerState } from './lib/timer';
   import { loadState, saveState } from './lib/store';
   import { formatTime } from './lib/utils';
   import { untrack } from 'svelte';
@@ -13,6 +13,7 @@
     breakBalance: 0,
     wasOnBreak: false,
     sinceLongBreak: 0,
+    longBreakEarned: false,
     longBreakThreshold: 7200,
     longBreakLength: 1500,
     ratio: 5,
@@ -22,6 +23,7 @@
 
   let currentView = $state<'main' | 'settings'>('main');
   let lastTrayText = "";
+  let lastTrayIcon = "fermata";
 
   $effect(() => {
     // untrack: reading `state` here must not make this effect re-run when the
@@ -49,6 +51,12 @@
         if (trayText !== lastTrayText) {
           invoke('update_tray_text', { text: trayText }).catch(() => {});
           lastTrayText = trayText;
+        }
+
+        const trayIcon = restStage(state);
+        if (trayIcon !== lastTrayIcon) {
+          invoke('set_tray_icon', { stage: trayIcon }).catch(() => {});
+          lastTrayIcon = trayIcon;
         }
       }
     }, 1000);
@@ -127,6 +135,8 @@
     invoke('start_drag');
   }
 
+  let breakStage = $derived(restStage(state));
+
   let longBreakProgress = $derived(
     Math.min(100, Math.round((state.sinceLongBreak / state.longBreakThreshold) * 100))
   );
@@ -134,6 +144,27 @@
 
 {#snippet time(seconds: number)}
   {#each formatTime(seconds).split(':') as part, i}{#if i > 0}<span class="colon">:</span>{/if}{part}{/each}
+{/snippet}
+
+{#snippet quarterRestIcon()}
+  <svg viewBox="0.5 0.4 23 23" aria-hidden="true">
+    <path d="M10.3 3 L14.9 8.3 C13.4 9.6 12.6 11 13.1 12.7 L15.6 16.4 C13.4 15.6 11.1 16 10.9 18 C10.8 19.4 11.7 20.6 12.9 21.6 C10.5 21 8.8 19.5 9 17.4 C9.2 15.6 10.8 14.6 12.4 14.7 L9.2 10.6 C10.8 9.3 11.6 8 11.6 6.4 Z" fill="currentColor" />
+  </svg>
+{/snippet}
+
+<!-- Half rest sits on its line; whole rest hangs below it -->
+{#snippet halfRestIcon()}
+  <svg viewBox="0.5 0.4 23 23" aria-hidden="true">
+    <rect x="3.5" y="13.2" width="17" height="1.5" rx="0.4" fill="currentColor" />
+    <rect x="7" y="8.4" width="10" height="5" rx="0.4" fill="currentColor" />
+  </svg>
+{/snippet}
+
+{#snippet wholeRestIcon()}
+  <svg viewBox="0.5 0.4 23 23" aria-hidden="true">
+    <rect x="3.5" y="9.3" width="17" height="1.5" rx="0.4" fill="currentColor" />
+    <rect x="7" y="10.6" width="10" height="5" rx="0.4" fill="currentColor" />
+  </svg>
 {/snippet}
 
 {#snippet fermataIcon()}
@@ -234,7 +265,15 @@
           onclick={() => handleAction(startBreak)}
           aria-label="Break"
         >
-          {@render fermataIcon()}
+          {#if breakStage === 'whole'}
+            {@render wholeRestIcon()}
+          {:else if breakStage === 'half'}
+            {@render halfRestIcon()}
+          {:else if breakStage === 'quarter'}
+            {@render quarterRestIcon()}
+          {:else}
+            {@render fermataIcon()}
+          {/if}
           <span class="tip">Break</span>
         </button>
         <button

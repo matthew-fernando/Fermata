@@ -4,6 +4,9 @@ type TrayMode = "icon" | "breakBalance" | "currentPeriod" | "totalSession" | "lo
 
 type Theme = "dark" | "light";
 
+// Which symbol the break button and menu bar show on the way to a long break
+type RestStage = "fermata" | "quarter" | "half" | "whole";
+
 interface TimerState {
 	mode: Mode;
 	workElapsed: number;
@@ -11,6 +14,7 @@ interface TimerState {
 	breakBalance: number;
 	wasOnBreak: boolean;
 	sinceLongBreak: number;
+	longBreakEarned: boolean;
 	longBreakThreshold: number;
 	longBreakLength: number;
 	ratio: number;
@@ -34,6 +38,7 @@ function tick(state: TimerState): TimerState
 			{
 				state.breakBalance += state.longBreakLength;
 				state.sinceLongBreak = 0;
+				state.longBreakEarned = true;
 			}
 			break;
 
@@ -58,6 +63,7 @@ function startBreak(state: TimerState): TimerState
 {
 	state.mode = "onBreak";
 	state.wasOnBreak = true;
+	state.longBreakEarned = false;
 	return state;
 }
 
@@ -73,10 +79,25 @@ function resetTimers(state: TimerState): TimerState
 	state.workSinceBreak = 0;
 	state.breakBalance = 0;
 	state.sinceLongBreak = 0;
+	state.longBreakEarned = false;
 	state.wasOnBreak = false;
 	state.mode = "idle";
 	return state;
 }
 
-export {tick, startWork, startBreak, startIdle, resetTimers}
-export type {Mode, TimerState, TrayMode, Theme}
+// Whole rest once the long break is earned (until the next break starts),
+// otherwise quarter and half rests at 25% and 50% of the way there
+function restStage(state: TimerState): RestStage
+{
+	if (state.longBreakEarned)
+		return "whole";
+	const progress = state.sinceLongBreak / state.longBreakThreshold;
+	if (progress >= 0.5)
+		return "half";
+	if (progress >= 0.25)
+		return "quarter";
+	return "fermata";
+}
+
+export {tick, startWork, startBreak, startIdle, resetTimers, restStage}
+export type {Mode, TimerState, TrayMode, Theme, RestStage}

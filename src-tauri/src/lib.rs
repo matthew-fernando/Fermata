@@ -12,6 +12,27 @@ fn update_tray_text(app: tauri::AppHandle, text: String) {
     }
 }
 
+// Menu bar images for each rest stage on the way to a long break.
+// All are black on transparent so macOS can tint them as template images.
+fn tray_image_bytes(stage: &str) -> &'static [u8] {
+    match stage {
+        "quarter" => include_bytes!("../icons/tray-quarter.png"),
+        "half" => include_bytes!("../icons/tray-half.png"),
+        "whole" => include_bytes!("../icons/tray-whole.png"),
+        _ => include_bytes!("../icons/tray.png"),
+    }
+}
+
+#[tauri::command]
+fn set_tray_icon(app: tauri::AppHandle, stage: String) -> tauri::Result<()> {
+    if let Some(tray) = app.tray_by_id("fermata-tray") {
+        tray.set_icon(Some(Image::from_bytes(tray_image_bytes(&stage))?))?;
+        // Replacing the image clears the template flag
+        tray.set_icon_as_template(true)?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn hide_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
@@ -53,7 +74,7 @@ fn start_drag(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
-        .invoke_handler(tauri::generate_handler![update_tray_text, hide_window, show_menu, quit_app, start_drag])
+        .invoke_handler(tauri::generate_handler![update_tray_text, set_tray_icon, hide_window, show_menu, quit_app, start_drag])
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => {
                 let _ = app.emit("open-settings", ());
@@ -66,9 +87,8 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            // Black fermata on transparent; as a template image macOS tints it
-            // to match the menu bar in light and dark mode
-            let tray_icon = Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+            // As a template image macOS tints it to match the menu bar in light and dark mode
+            let tray_icon = Image::from_bytes(tray_image_bytes("fermata"))?;
 
             TrayIconBuilder::with_id("fermata-tray")
                 .title("Fermata")
