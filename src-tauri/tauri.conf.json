@@ -10,10 +10,11 @@
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Fermata",
-        "width": 520,
+        "width": 470,
         "height": 310,
         "decorations": false,
         "resizable": false,
