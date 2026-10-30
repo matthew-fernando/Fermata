@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Fermata",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "identifier": "com.matthewfernando.fermata",
   "build": {
     "frontendDist": "../dist",
@@ -27,6 +27,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -41,5 +42,13 @@
     "macOS": {
       "signingIdentity": "-"
 }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_CONTENTS_OF_fermata.key.pub",
+      "endpoints": [
+        "https://github.com/matthew-fernando/Fermata/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -63,6 +63,7 @@ fn show_menu(window: tauri::Window, x: f64, y: f64) -> tauri::Result<()> {
             // Accelerators here only label the shortcuts; the keys themselves
             // are handled by the frontend's keydown listener
             &MenuItem::with_id(&window, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?,
+            &MenuItem::with_id(&window, "updates", "Check for Updates…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(&window)?,
             &MenuItem::with_id(&window, "quit", "Quit Fermata", true, Some("CmdOrCtrl+Q"))?,
         ],
@@ -82,15 +83,23 @@ fn start_drag(app: tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![update_tray_text, set_tray_icon, set_always_on_top, hide_window, show_menu, quit_app, start_drag])
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => {
                 let _ = app.emit("open-settings", ());
             }
+            "updates" => {
+                let _ = app.emit("check-updates", ());
+            }
             "quit" => app.exit(0),
             _ => {}
         })
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
             // Run as a menu bar only app (no Dock icon), like LSUIElement
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);

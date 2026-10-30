@@ -5,6 +5,9 @@
   import { untrack } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
+  import { check, type Update } from '@tauri-apps/plugin-updater';
+  import { relaunch } from '@tauri-apps/plugin-process';
+  import { ask, message } from '@tauri-apps/plugin-dialog';
 
   let state = $state<TimerState>({
     mode: "idle",
@@ -23,6 +26,12 @@
   });
 
   let currentView = $state<'main' | 'settings'>('main');
+
+  // Update found by the launch check or the menu's Check for Updates.
+  // Dismissing the banner lasts until the app is quit and reopened.
+  let availableUpdate = $state<Update | null>(null);
+  let bannerDismissed = $state(false);
+  let updating = $state(false);
   let lastTrayText = "";
   let lastTrayIcon = "fermata";
 
@@ -88,13 +97,66 @@
 
     // Sent by the native three dots menu
     const unlistenSettings = listen('open-settings', () => { currentView = 'settings'; });
+    const unlistenUpdates = listen('check-updates', () => checkForUpdates(true));
+
+    // Check quietly on launch, then every 6 hours for long-running sessions
+    checkForUpdates(false);
+    const updateCheckId = setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
 
     return () => {
       clearInterval(intervalId);
+      clearInterval(updateCheckId);
       unlistenSettings.then((unlisten) => unlisten());
+      unlistenUpdates.then((unlisten) => unlisten());
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   });
+
+  // Quiet checks only update the banner; a manual check always answers with a dialog
+  async function checkForUpdates(manual: boolean) {
+    let update: Update | null;
+    try {
+      update = await check();
+    } catch {
+      if (manual) {
+        await message("Couldn't check for updates. Check your internet connection and try again.", {
+          title: 'Update Check Failed',
+          kind: 'error'
+        });
+      }
+      return;
+    }
+
+    availableUpdate = update;
+    if (!manual) return;
+
+    if (update) {
+      const wantsUpdate = await ask(`Fermata ${update.version} is available. You have ${update.currentVersion}.`, {
+        title: 'Update Available',
+        okLabel: 'Update',
+        cancelLabel: 'Later'
+      });
+      if (wantsUpdate) installUpdate();
+    } else {
+      await message("You're running the latest version of Fermata.", { title: "You're Up to Date" });
+    }
+  }
+
+  // Downloads, verifies against the updater public key, installs, then restarts
+  async function installUpdate() {
+    if (!availableUpdate || updating) return;
+    updating = true;
+    try {
+      await availableUpdate.downloadAndInstall();
+      await relaunch();
+    } catch {
+      updating = false;
+      await message("The update couldn't be installed. Try again later.", {
+        title: 'Update Failed',
+        kind: 'error'
+      });
+    }
+  }
 
   function handleAction(actionFn: (s: TimerState) => TimerState) {
     state = actionFn(state);
@@ -205,6 +267,20 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <main class="app" data-theme={state.theme} onmousedown={handleDrag} role="presentation">
+  {#if availableUpdate && !bannerDismissed}
+    <div class="update-banner" role="status">
+      <span class="banner-text">Update available <span class="banner-version">v{availableUpdate.version}</span></span>
+      <button class="banner-action" onclick={installUpdate} disabled={updating}>
+        {updating ? 'Updating…' : 'Update Now'}
+      </button>
+      <button class="banner-close" onclick={() => bannerDismissed = true} aria-label="Dismiss update banner">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 7 L17 17 M17 7 L7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
+  {/if}
+
   <header>
     {#if currentView === 'settings'}
       <button class="chrome-btn" onclick={() => currentView = 'main'} aria-label="Back" title="Back">
@@ -419,6 +495,52 @@
   }
 
   svg { display: block; width: 100%; height: 100%; }
+
+  /* Update banner: inverted colors (white in dark mode, black in light) so it stands out */
+  .update-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: -10px -14px 4px;
+    padding: 6px 8px 6px 16px;
+    background: var(--fg);
+    color: var(--bg);
+    font-size: 0.8rem;
+  }
+
+  .banner-text {
+    flex: 1;
+    font-style: italic;
+  }
+
+  .banner-version {
+    font-style: normal;
+    opacity: 0.7;
+    margin-left: 2px;
+  }
+
+  .banner-action {
+    padding: 3px 11px;
+    font-size: 0.75rem;
+    background: var(--bg);
+    color: var(--fg);
+    border-radius: 999px;
+    transition: opacity 0.15s ease;
+  }
+
+  .banner-action:hover { opacity: 0.85; }
+  .banner-action:disabled { opacity: 0.6; cursor: default; }
+
+  .banner-close {
+    width: 20px;
+    height: 20px;
+    padding: 3px;
+    border-radius: 5px;
+    opacity: 0.7;
+    transition: opacity 0.15s ease;
+  }
+
+  .banner-close:hover { opacity: 1; }
 
   /* Header: no banner, just floating controls */
   header {
