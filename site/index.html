@@ -415,6 +415,113 @@
     footer a { text-decoration: none; }
     footer a:hover { color: var(--fg); }
 
+    /* Install guide shown after clicking Download for Mac */
+    dialog.guide {
+      width: min(560px, calc(100vw - 32px));
+      max-height: calc(100dvh - 32px);
+      padding: 0;
+      color: var(--fg);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 40px 80px -24px rgba(0, 0, 0, 0.45);
+    }
+
+    dialog.guide::backdrop {
+      background: rgba(0, 0, 0, 0.45);
+      backdrop-filter: blur(3px);
+    }
+
+    .guide-inner { padding: 30px 30px 26px; }
+
+    .guide-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .guide h2 { margin-top: 6px; font-size: 1.7rem; }
+
+    .guide-close {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      padding: 7px;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+
+    .guide-close:hover { background: var(--hover); color: var(--fg); }
+    .guide-close svg { width: 100%; height: 100%; }
+
+    .guide-sub {
+      margin: 10px 0 0;
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+
+    .guide-sub a { text-underline-offset: 3px; }
+
+    .guide-steps {
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: step;
+    }
+
+    .guide-steps li {
+      position: relative;
+      padding: 14px 0 14px 44px;
+      border-top: 1px solid var(--line);
+      counter-increment: step;
+    }
+
+    .guide-steps li::before {
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 13px;
+      width: 28px;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      font-style: italic;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+    }
+
+    .guide-steps strong { font-weight: 400; font-style: italic; }
+    .guide-steps p { margin: 3px 0 0; font-size: 0.9rem; color: var(--muted); }
+    .guide-steps b { font-weight: 400; color: var(--fg); }
+
+    .guide-fix {
+      margin-top: 4px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+
+    .guide-fix strong { color: var(--fg); font-weight: 400; font-style: italic; }
+    .guide-fix .brew { margin: 10px 0 0; max-width: none; }
+
+    .guide-brew {
+      margin: 16px 0 0;
+      font-size: 0.9rem;
+      font-style: italic;
+      color: var(--muted);
+    }
+
+    .guide-brew .brew { margin: 8px 0 0; max-width: none; font-style: normal; }
+
     a:focus-visible, button:focus-visible {
       outline: 1px solid var(--muted);
       outline-offset: 3px;
@@ -639,6 +746,62 @@
     </section>
   </main>
 
+  <dialog class="guide" id="guide" aria-labelledby="guide-title">
+    <div class="guide-inner">
+      <div class="guide-top">
+        <div>
+          <span class="eyebrow">Your download has started</span>
+          <h2 id="guide-title">Installing Fermata</h2>
+        </div>
+        <button class="guide-close" id="guide-close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M7 7 L17 17 M17 7 L7 17" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none" />
+          </svg>
+        </button>
+      </div>
+      <p class="guide-sub">Fermata isn't notarized by Apple, so macOS asks you to approve it once. Nothing to worry about, it takes a minute. If the download didn't start, <a id="guide-retry" href="https://github.com/matthew-fernando/Fermata/releases/latest">click here</a>.</p>
+
+      <ol class="guide-steps">
+        <li>
+          <strong>Open the DMG</strong>
+          <p>Find <b>Fermata_…_universal.dmg</b> in your Downloads folder and double-click it.</p>
+        </li>
+        <li>
+          <strong>Drag Fermata into Applications</strong>
+          <p>Drop the Fermata icon onto the <b>Applications</b> folder in the window that opens, then eject the DMG.</p>
+        </li>
+        <li>
+          <strong>Open Fermata once</strong>
+          <p>Open it from Applications. macOS will say <b>“Fermata” Not Opened</b> because it can't verify the developer. Click <b>Done</b>.</p>
+        </li>
+        <li>
+          <strong>Click Open Anyway</strong>
+          <p>Go to <b>System Settings → Privacy &amp; Security</b>, scroll down to the Security section, and click <b>Open Anyway</b> next to Fermata. Enter your password, then click <b>Open Anyway</b> again.</p>
+        </li>
+        <li>
+          <strong>Find it in your menu bar</strong>
+          <p>Fermata lives in the menu bar, not the Dock. Click the fermata symbol at the top of your screen to open it. You won't need these steps again, and future updates install from inside the app.</p>
+        </li>
+      </ol>
+
+      <div class="guide-fix">
+        <strong>macOS says the app is “damaged”?</strong> It isn't. Run this in Terminal, then open Fermata again:
+        <div class="brew">
+          <code>xattr -dr com.apple.quarantine /Applications/Fermata.app</code>
+          <button class="copy" data-copy="xattr -dr com.apple.quarantine /Applications/Fermata.app">Copy</button>
+        </div>
+      </div>
+
+      <div class="guide-brew">
+        Skip all of this next time with Homebrew:
+        <div class="brew">
+          <code>brew install --cask matthew-fernando/tap/fermata</code>
+          <button class="copy" data-copy="brew install --cask matthew-fernando/tap/fermata">Copy</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
   <div class="wrap">
     <hr class="rule" />
     <footer>
@@ -661,6 +824,21 @@
         document.getElementById('version').textContent = release.tag_name;
       })
       .catch(() => {});
+
+    // Let the download start as normal, then show the install guide over the page.
+    // If the button still points at the Releases page (lookup failed), just follow it.
+    const guide = document.getElementById('guide');
+    document.getElementById('download').addEventListener('click', (event) => {
+      const href = event.currentTarget.href;
+      if (!href.endsWith('.dmg')) return;
+      document.getElementById('guide-retry').href = href;
+      guide.showModal();
+    });
+    document.getElementById('guide-close').addEventListener('click', () => guide.close());
+    // Clicking the dimmed area outside the guide closes it
+    guide.addEventListener('click', (event) => {
+      if (event.target === guide) guide.close();
+    });
 
     document.querySelectorAll('.copy').forEach((button) => {
       button.addEventListener('click', async () => {
