@@ -1,5 +1,5 @@
 import { Store } from '@tauri-apps/plugin-store';
-import type { TimerState } from './timer';
+import { sanitizeState, type TimerState } from './timer';
 
 const STORE_PATH = 'fermata-state.json';
 let store: Store | null = null;
@@ -26,9 +26,10 @@ export async function saveState(state: TimerState): Promise<void> {
 export async function loadState(defaultState: TimerState): Promise<TimerState> {
 	try {
 		const s = await getStore();
-		const saved = await s.get<TimerState>('state');
+		const saved = await s.get<Partial<TimerState>>('state');
 		if (saved) {
-			return { ...defaultState, ...saved };
+			// Saved state from before the intro existed means this isn't a first launch
+			return sanitizeState({ ...defaultState, hasSeenIntro: true, ...saved });
 		}
 	} catch (err) {
 		console.warn('Failed to load saved state, falling back to defaults:', err);

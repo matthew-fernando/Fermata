@@ -2,8 +2,22 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{TrayIconBuilder, TrayIconEvent},
-    Emitter, LogicalPosition, Manager,
+    AppHandle, Emitter, LogicalPosition, Manager, RunEvent,
 };
+
+// Shows the window above everything else. Raising its level for a moment puts it
+// on top even when macOS declines to activate a menu bar only app.
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let pinned = window.is_always_on_top().unwrap_or(false);
+        let _ = window.show();
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_focus();
+        let _ = window.set_always_on_top(pinned);
+        // Lets the frontend catch up on anything it held back while hidden
+        let _ = app.emit("window-shown", ());
+    }
+}
 
 #[tauri::command]
 fn update_tray_text(app: tauri::AppHandle, text: String) {
@@ -42,6 +56,11 @@ fn set_always_on_top(app: tauri::AppHandle, enabled: bool) -> tauri::Result<()> 
 }
 
 #[tauri::command]
+fn bring_to_front(app: AppHandle) {
+    show_main_window(&app);
+}
+
+#[tauri::command]
 fn hide_window(app: tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.hide();
@@ -63,6 +82,7 @@ fn show_menu(window: tauri::Window, x: f64, y: f64) -> tauri::Result<()> {
             // Accelerators here only label the shortcuts; the keys themselves
             // are handled by the frontend's keydown listener
             &MenuItem::with_id(&window, "settings", "Settings…", true, Some("CmdOrCtrl+,"))?,
+            &MenuItem::with_id(&window, "how-it-works", "How It Works", true, None::<&str>)?,
             &MenuItem::with_id(&window, "updates", "Check for Updates…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(&window)?,
             &MenuItem::with_id(&window, "quit", "Quit Fermata", true, Some("CmdOrCtrl+Q"))?,
@@ -85,10 +105,13 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
-        .invoke_handler(tauri::generate_handler![update_tray_text, set_tray_icon, set_always_on_top, hide_window, show_menu, quit_app, start_drag])
+        .invoke_handler(tauri::generate_handler![update_tray_text, set_tray_icon, set_always_on_top, bring_to_front, hide_window, show_menu, quit_app, start_drag])
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => {
                 let _ = app.emit("open-settings", ());
+            }
+            "how-it-works" => {
+                let _ = app.emit("open-how-it-works", ());
             }
             "updates" => {
                 let _ = app.emit("check-updates", ());
@@ -113,11 +136,7 @@ pub fn run() {
                 .icon_as_template(true)
                 .on_tray_icon_event(|tray, event| {
                     if let TrayIconEvent::Click { .. } = event {
-                        let app = tray.app_handle();
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
+                        show_main_window(tray.app_handle());
                     }
                 })
                 .build(app)?;
@@ -127,11 +146,14 @@ pub fn run() {
         // Swap .run() for .build().run() to intercept lifecycle events
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|_app_handle, event| {
+        .run(|app, event| match event {
+            RunEvent::Ready => show_main_window(app),
+            // Opening the app again while it's already running in the menu bar
+            #[cfg(target_os = "macos")]
+            RunEvent::Reopen { .. } => show_main_window(app),
             // Prevent the app from dying when the window is hidden.
             // Only app.exit() (menu Quit or Cmd+Q) carries an exit code, so it gets through.
-            if let tauri::RunEvent::ExitRequested { code: None, api, .. } = event {
-                api.prevent_exit();
-            }
+            RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+            _ => {}
         });
 }

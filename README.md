@@ -12,7 +12,7 @@ I built this app because I didn't like how Pomodoro apps worked. I always found 
 - **Break** (𝄐) spends it. Your **Break Balance** counts down while you rest and can go negative if you overdo it.
 - **Pause** stops the clock without earning or spending anything.
 
-Keep working and you earn a **long break bonus**: by default, an extra 25 minutes after every 2 hours of work.
+Keep working and you earn a **long break bonus**: by default, an extra 20 minutes after every 100 minutes of work.
 
 ## Features
 
@@ -22,7 +22,7 @@ Keep working and you earn a **long break bonus**: by default, an extra 25 minute
 - **Light and dark mode**, and an optional **always on top** window.
 - **Remembers your progress** between launches.
 
-- The Break button and the menu bar icon show your progress towards your long break:
+- The logo and the menu bar icon show your progress towards your long break:
 
 | Progress | Symbol |
 |---|---|

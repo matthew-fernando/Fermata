@@ -4,7 +4,7 @@ type TrayMode = "icon" | "breakBalance" | "currentPeriod" | "totalSession" | "lo
 
 type Theme = "dark" | "light";
 
-// Which symbol the break button and menu bar show on the way to a long break
+// Which symbol the logo and menu bar show on the way to a long break
 type RestStage = "fermata" | "quarter" | "half" | "whole";
 
 interface TimerState {
@@ -15,13 +15,24 @@ interface TimerState {
 	wasOnBreak: boolean;
 	sinceLongBreak: number;
 	longBreakEarned: boolean;
+	longBreakToCelebrate: boolean;
 	longBreakThreshold: number;
 	longBreakLength: number;
 	ratio: number;
 	trayMode: TrayMode;
 	theme: Theme;
 	alwaysOnTop: boolean;
+	hasSeenIntro: boolean;
 }
+
+// Used for first launch defaults and the Use Pomodoro Ratio button
+const POMODORO_SETTINGS = {
+	ratio: 5,
+	longBreakThreshold: 100 * 60,
+	longBreakLength: 20 * 60
+};
+
+const MAX_RATIO = 20;
 
 function tick(state: TimerState): TimerState 
 {
@@ -40,6 +51,7 @@ function tick(state: TimerState): TimerState
 				state.breakBalance += state.longBreakLength;
 				state.sinceLongBreak = 0;
 				state.longBreakEarned = true;
+				state.longBreakToCelebrate = true;
 			}
 			break;
 
@@ -81,6 +93,7 @@ function resetTimers(state: TimerState): TimerState
 	state.breakBalance = 0;
 	state.sinceLongBreak = 0;
 	state.longBreakEarned = false;
+	state.longBreakToCelebrate = false;
 	state.wasOnBreak = false;
 	state.mode = "idle";
 	return state;
@@ -100,5 +113,20 @@ function restStage(state: TimerState): RestStage
 	return "fermata";
 }
 
-export {tick, startWork, startBreak, startIdle, resetTimers, restStage}
+// Repairs values older versions could save: an empty ratio field made the
+// balance Infinity, which is stored as null
+function sanitizeState(state: TimerState): TimerState
+{
+	for (const key of ["ratio", "longBreakThreshold", "longBreakLength"] as const) {
+		if (!(state[key] > 0) || !Number.isFinite(state[key]))
+			state[key] = POMODORO_SETTINGS[key];
+	}
+	for (const key of ["workElapsed", "workSinceBreak", "breakBalance", "sinceLongBreak"] as const) {
+		if (!Number.isFinite(state[key]))
+			state[key] = 0;
+	}
+	return state;
+}
+
+export {tick, startWork, startBreak, startIdle, resetTimers, restStage, sanitizeState, POMODORO_SETTINGS, MAX_RATIO}
 export type {Mode, TimerState, TrayMode, Theme, RestStage}

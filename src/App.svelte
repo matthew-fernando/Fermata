@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { tick, startWork, startBreak, startIdle, resetTimers, restStage, type TimerState } from './lib/timer';
+  import { tick, startWork, startBreak, startIdle, resetTimers, restStage, POMODORO_SETTINGS, MAX_RATIO, type TimerState } from './lib/timer';
   import { loadState, saveState } from './lib/store';
   import { formatTime } from './lib/utils';
   import { untrack } from 'svelte';
+  import { fade } from 'svelte/transition';
+  import { getVersion } from '@tauri-apps/api/app';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { check, type Update } from '@tauri-apps/plugin-updater';
@@ -17,15 +19,24 @@
     wasOnBreak: false,
     sinceLongBreak: 0,
     longBreakEarned: false,
-    longBreakThreshold: 7200,
-    longBreakLength: 1500,
-    ratio: 5,
+    longBreakToCelebrate: false,
+    ...POMODORO_SETTINGS,
     trayMode: "breakBalance",
     theme: "dark",
-    alwaysOnTop: false
+    alwaysOnTop: false,
+    hasSeenIntro: false
   });
 
-  let currentView = $state<'main' | 'settings'>('main');
+  let currentView = $state<'main' | 'settings' | 'howItWorks'>('main');
+
+  // Long break reward: what's on screen now, and whether the balance is doing its
+  // little pop after the reward closes
+  type CelebrationSymbol = { icon: 'note' | 'quarter' | 'fermata'; style: string };
+  let celebration = $state<{ minutes: number; symbols: CelebrationSymbol[] } | null>(null);
+  let balancePop = $state(false);
+  let celebrationTimeoutId: ReturnType<typeof setTimeout> | undefined;
+  // document.hidden can lag behind hiding the window, so track that directly too
+  let windowVisible = true;
 
   // Update found by the launch check or the menu's Check for Updates.
   // Dismissing the banner lasts until the app is quit and reopened.
@@ -41,8 +52,15 @@
     untrack(() => loadState(state)).then((loaded) => {
       // Every launch starts paused; hiding and reopening the window doesn't
       state = startIdle(loaded);
+      if (!state.hasSeenIntro) {
+        currentView = 'howItWorks';
+        state.hasSeenIntro = true;
+      }
       saveState(state);
-      invoke('set_always_on_top', { enabled: state.alwaysOnTop }).catch(() => {});
+      invoke('set_always_on_top', { enabled: state.alwaysOnTop })
+        .then(() => invoke('bring_to_front'))
+        .catch(() => {});
+      celebrateIfVisible();
     });
     let lastTickTime = Date.now();
 
@@ -56,6 +74,7 @@
         }
         lastTickTime += elapsedSeconds * 1000;
         if (state.mode !== "idle") saveState(state);
+        celebrateIfVisible();
 
         let trayText = "";
         if (state.trayMode === "breakBalance") trayText = formatTime(state.breakBalance);
@@ -90,14 +109,25 @@
     };
 
     const handleVisibilityChange = () => {
-      if (!document.hidden) catchUp();
+      if (!document.hidden) {
+        catchUp();
+        celebrateIfVisible();
+      }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Sent by the native three dots menu
     const unlistenSettings = listen('open-settings', () => { currentView = 'settings'; });
+    const unlistenHowItWorks = listen('open-how-it-works', () => { currentView = 'howItWorks'; });
     const unlistenUpdates = listen('check-updates', () => checkForUpdates(true));
+
+    // Sent whenever the window is shown from the menu bar or by reopening the app
+    const unlistenShown = listen('window-shown', () => {
+      windowVisible = true;
+      catchUp();
+      celebrateIfVisible();
+    });
 
     // Check quietly on launch, then every 6 hours for long-running sessions
     checkForUpdates(false);
@@ -107,7 +137,9 @@
       clearInterval(intervalId);
       clearInterval(updateCheckId);
       unlistenSettings.then((unlisten) => unlisten());
+      unlistenHowItWorks.then((unlisten) => unlisten());
       unlistenUpdates.then((unlisten) => unlisten());
+      unlistenShown.then((unlisten) => unlisten());
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   });
@@ -119,7 +151,7 @@
       update = await check();
     } catch {
       if (manual) {
-        await message("Couldn't check for updates. Check your internet connection and try again.", {
+        await message(`You're on Fermata ${await getVersion()}. Couldn't check for updates, so check your internet connection and try again.`, {
           title: 'Update Check Failed',
           kind: 'error'
         });
@@ -131,14 +163,14 @@
     if (!manual) return;
 
     if (update) {
-      const wantsUpdate = await ask(`Fermata ${update.version} is available. You have ${update.currentVersion}.`, {
+      const wantsUpdate = await ask(`Fermata ${update.version} is available. You're on ${update.currentVersion}.`, {
         title: 'Update Available',
         okLabel: 'Update',
         cancelLabel: 'Later'
       });
       if (wantsUpdate) installUpdate();
     } else {
-      await message("You're running the latest version of Fermata.", { title: "You're Up to Date" });
+      await message(`You're on Fermata ${await getVersion()}, the latest version.`, { title: "You're Up to Date" });
     }
   }
 
@@ -163,12 +195,60 @@
     saveState(state);
   }
 
-  // 1 min rest per 5 min work, plus a 30 min long break every 2 hours
+  // 1 min rest per 5 min work, plus a 20 min long break every 100 min
   function usePomodoroRatio() {
-    state.ratio = 5;
-    state.longBreakThreshold = 120 * 60;
-    state.longBreakLength = 30 * 60;
+    Object.assign(state, POMODORO_SETTINGS);
     saveState(state);
+  }
+
+  // Applies from the next second on; break time already earned is kept. Half-typed
+  // values (empty, 0) are ignored so the timer never divides by nothing.
+  function setRatio(ratio: number) {
+    if (ratio >= 1 && ratio <= MAX_RATIO) {
+      state.ratio = ratio;
+      saveState(state);
+    }
+  }
+
+  // When the field is left, clamp over-limit values and undo invalid ones
+  function commitRatio(input: HTMLInputElement) {
+    setRatio(Math.min(input.valueAsNumber, MAX_RATIO));
+    input.value = String(state.ratio);
+  }
+
+  function commitMinutes(input: HTMLInputElement, field: 'longBreakThreshold' | 'longBreakLength') {
+    if (input.valueAsNumber >= 1) {
+      state[field] = Math.round(input.valueAsNumber * 60);
+      saveState(state);
+    }
+    input.value = String(Math.round(state[field] / 60));
+  }
+
+  function minutesText(minutes: number) {
+    return minutes === 1 ? '1 minute' : `${minutes} minutes`;
+  }
+
+  // Plays the long break reward once the user can see it. If the window is hidden
+  // the reward waits, and this runs again when the window comes back.
+  function celebrateIfVisible() {
+    if (!state.longBreakToCelebrate || !windowVisible || document.hidden) return;
+    state.longBreakToCelebrate = false;
+    saveState(state);
+
+    const icons: CelebrationSymbol['icon'][] = ['note', 'quarter', 'fermata'];
+    const symbols = Array.from({ length: 18 }, (_, i) => ({
+      icon: icons[i % icons.length],
+      style: `left: ${Math.random() * 96}%; --size: ${14 + Math.random() * 16}px; --delay: ${Math.random() * 1.4}s; --duration: ${2 + Math.random() * 1.2}s; --drift: ${-30 + Math.random() * 60}px; --spin: ${-40 + Math.random() * 80}deg;`
+    }));
+    celebration = { minutes: Math.round(state.longBreakLength / 60), symbols };
+    celebrationTimeoutId = setTimeout(dismissCelebration, 4000);
+  }
+
+  function dismissCelebration() {
+    clearTimeout(celebrationTimeoutId);
+    if (!celebration) return;
+    celebration = null;
+    balancePop = true;
   }
 
   function setAlwaysOnTop(enabled: boolean) {
@@ -183,6 +263,7 @@
   }
 
   async function hideWindow() {
+    windowVisible = false;
     await invoke('hide_window');
   }
 
@@ -210,7 +291,7 @@
     invoke('start_drag');
   }
 
-  let breakStage = $derived(restStage(state));
+  let logoStage = $derived(restStage(state));
 
   let longBreakProgress = $derived(
     Math.min(100, Math.round((state.sinceLongBreak / state.longBreakThreshold) * 100))
@@ -249,6 +330,18 @@
   </svg>
 {/snippet}
 
+{#snippet stageIcon(stage: string)}
+  {#if stage === 'whole'}
+    {@render wholeRestIcon()}
+  {:else if stage === 'half'}
+    {@render halfRestIcon()}
+  {:else if stage === 'quarter'}
+    {@render quarterRestIcon()}
+  {:else}
+    {@render fermataIcon()}
+  {/if}
+{/snippet}
+
 {#snippet noteIcon()}
   <svg viewBox="0 0 24 24" aria-hidden="true">
     <ellipse cx="9" cy="17.6" rx="3.6" ry="2.7" transform="rotate(-22 9 17.6)" fill="currentColor" />
@@ -282,7 +375,7 @@
   {/if}
 
   <header>
-    {#if currentView === 'settings'}
+    {#if currentView !== 'main'}
       <button class="chrome-btn" onclick={() => currentView = 'main'} aria-label="Back" title="Back">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M14.5 6 L8.5 12 L14.5 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
@@ -298,7 +391,7 @@
     {/if}
 
     <div class="brand">
-      <span class="brand-mark">{@render fermataIcon()}</span>
+      <span class="brand-mark">{@render stageIcon(logoStage)}</span>
       <h1>Fermata</h1>
     </div>
 
@@ -325,7 +418,7 @@
     <section class="main-view">
       <div class="balance">
         <span class="eyebrow">Break Balance</span>
-        <span class="balance-value">{@render time(state.breakBalance)}</span>
+        <span class="balance-value" class:pop={balancePop} onanimationend={() => balancePop = false}>{@render time(state.breakBalance)}</span>
       </div>
 
       <div class="stats">
@@ -354,15 +447,7 @@
           onclick={() => handleAction(startBreak)}
           aria-label="Break"
         >
-          {#if breakStage === 'whole'}
-            {@render wholeRestIcon()}
-          {:else if breakStage === 'half'}
-            {@render halfRestIcon()}
-          {:else if breakStage === 'quarter'}
-            {@render quarterRestIcon()}
-          {:else}
-            {@render fermataIcon()}
-          {/if}
+          {@render fermataIcon()}
           <span class="tip">Break</span>
         </button>
         <button
@@ -383,6 +468,30 @@
           {@render noteIcon()}
           <span class="tip">Work</span>
         </button>
+      </div>
+    </section>
+
+  {:else if currentView === 'howItWorks'}
+    <section class="guide-view">
+      <div class="guide-row">
+        <span class="guide-icon">{@render noteIcon()}</span>
+        <p><strong>Work</strong> earns break time. Every {minutesText(state.ratio)} of work earns 1 minute of break.</p>
+      </div>
+      <div class="guide-row">
+        <span class="guide-icon">{@render fermataIcon()}</span>
+        <p><strong>Break</strong> spends it, whenever you choose. Your balance can dip below zero if you linger.</p>
+      </div>
+      <div class="guide-row">
+        <span class="guide-icon">{@render pauseIcon()}</span>
+        <p><strong>Pause</strong> stops the clock, so nothing is earned or spent.</p>
+      </div>
+      <div class="guide-row">
+        <span class="guide-icon">{@render wholeRestIcon()}</span>
+        <p><strong>Long breaks</strong> are a bonus: every {minutesText(Math.round(state.longBreakThreshold / 60))} of work adds {minutesText(Math.round(state.longBreakLength / 60))}. The progress bar shows how close you are, and the logo up top changes with it, from fermata to quarter, half, then whole rest.</p>
+      </div>
+      <div class="guide-footer">
+        <span class="hint">Closing this window keeps Fermata running in your menu bar.</span>
+        <button class="preset" onclick={() => currentView = 'main'}>Got It</button>
       </div>
     </section>
 
@@ -418,25 +527,23 @@
 
         <div class="field">
           <label class="eyebrow" for="ratio">Work Ratio</label>
-          <input id="ratio" type="number" min="1" max="20" bind:value={state.ratio} onchange={() => saveState(state)} />
+          <input id="ratio" type="number" min="1" max={MAX_RATIO} value={state.ratio}
+            oninput={(e) => setRatio(e.currentTarget.valueAsNumber)}
+            onchange={(e) => commitRatio(e.currentTarget)} />
           <span class="hint">1 min rest per {state.ratio} min work</span>
         </div>
 
         <div class="field">
           <label class="eyebrow" for="threshold">Long Break Every</label>
-          <input id="threshold" type="number" min="1" value={Math.round(state.longBreakThreshold / 60)} onchange={(e) => {
-              state.longBreakThreshold = Number(e.currentTarget.value) * 60;
-              saveState(state);
-            }} />
+          <input id="threshold" type="number" min="1" value={Math.round(state.longBreakThreshold / 60)}
+            onchange={(e) => commitMinutes(e.currentTarget, 'longBreakThreshold')} />
           <span class="hint">minutes of work</span>
         </div>
 
         <div class="field">
           <label class="eyebrow" for="length">Long Break Length</label>
-          <input id="length" type="number" min="1" value={Math.round(state.longBreakLength / 60)} onchange={(e) => {
-              state.longBreakLength = Number(e.currentTarget.value) * 60;
-              saveState(state);
-            }} />
+          <input id="length" type="number" min="1" value={Math.round(state.longBreakLength / 60)}
+            onchange={(e) => commitMinutes(e.currentTarget, 'longBreakLength')} />
           <span class="hint">minutes</span>
         </div>
 
@@ -445,6 +552,25 @@
         </div>
       </div>
     </section>
+  {/if}
+
+  {#if celebration}
+    <button class="celebration" onclick={dismissCelebration} out:fade={{ duration: 350 }} aria-label="Long break earned. Dismiss.">
+      {#each celebration.symbols as symbol}
+        <span class="floating-symbol" style={symbol.style}>
+          {#if symbol.icon === 'note'}
+            {@render noteIcon()}
+          {:else if symbol.icon === 'quarter'}
+            {@render quarterRestIcon()}
+          {:else}
+            {@render fermataIcon()}
+          {/if}
+        </span>
+      {/each}
+      <span class="celebration-mark">{@render wholeRestIcon()}</span>
+      <span class="celebration-title">Long break earned</span>
+      <span class="celebration-detail">{minutesText(celebration.minutes)} added to your break balance</span>
+    </button>
   {/if}
 </main>
 
@@ -458,6 +584,7 @@
 
     --serif: "Iowan Old Style", "Palatino", "Palatino Linotype", "Book Antiqua", Georgia, serif;
 
+    position: relative;
     width: 100vw;
     height: 100vh;
     display: flex;
@@ -620,6 +747,13 @@
     letter-spacing: -0.01em;
   }
 
+  /* After the long break reward closes, draw the eye to the new balance */
+  .balance-value.pop { animation: balance-pop 0.7s ease; }
+
+  @keyframes balance-pop {
+    40% { transform: scale(1.1); }
+  }
+
   .stats {
     display: flex;
     align-items: center;
@@ -721,6 +855,141 @@
     left: auto;
     right: 0;
     transform: none;
+  }
+
+  /* How It Works view */
+  .guide-view {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 6px;
+  }
+
+  .guide-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .guide-icon {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    padding: 5px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+  }
+
+  .guide-row p {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    color: var(--muted);
+  }
+
+  .guide-row strong {
+    font-weight: 400;
+    font-style: italic;
+    color: var(--fg);
+  }
+
+  .guide-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  /* Long break reward: the window floods with the inverse color while symbols
+     drift up behind a whole rest settling onto its line */
+  .celebration {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    overflow: hidden;
+    background: var(--fg);
+    color: var(--bg);
+    cursor: pointer;
+    animation: celebration-flood 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  @keyframes celebration-flood {
+    from { clip-path: circle(0% at 50% 45%); }
+    to { clip-path: circle(120% at 50% 45%); }
+  }
+
+  .floating-symbol {
+    position: absolute;
+    bottom: -40px;
+    width: var(--size);
+    height: var(--size);
+    opacity: 0;
+    animation: symbol-float var(--duration) ease-out var(--delay) forwards;
+  }
+
+  @keyframes symbol-float {
+    15% { opacity: 0.45; }
+    70% { opacity: 0.35; }
+    to {
+      opacity: 0;
+      transform: translate(var(--drift), -340px) rotate(var(--spin));
+    }
+  }
+
+  .celebration-mark {
+    position: relative;
+    width: 76px;
+    height: 76px;
+    animation: rest-settle 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.25s backwards;
+  }
+
+  @keyframes rest-settle {
+    from {
+      opacity: 0;
+      transform: translateY(-46px) scale(0.7);
+    }
+  }
+
+  .celebration-title,
+  .celebration-detail {
+    position: relative;
+    animation: celebration-rise 0.5s ease-out backwards;
+  }
+
+  .celebration-title {
+    font-size: 1.85rem;
+    font-style: italic;
+    letter-spacing: 0.02em;
+    animation-delay: 0.55s;
+  }
+
+  .celebration-detail {
+    font-size: 0.88rem;
+    opacity: 0.85;
+    animation-delay: 0.75s;
+  }
+
+  @keyframes celebration-rise {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .celebration,
+    .celebration-mark,
+    .celebration-title,
+    .celebration-detail,
+    .balance-value.pop { animation: none; }
+    .floating-symbol { display: none; }
   }
 
   /* Settings view */
