@@ -40,6 +40,9 @@ Keep working and you earn a **long break bonus**: by default, an extra 20 minute
 | ⌘ Q | Quit |
 
 ## Install
+
+Not on a Mac, or don't want to install anything? Use the [web version](https://app.fermata.study) in any browser.
+
 ### Homebrew
 
 ```bash

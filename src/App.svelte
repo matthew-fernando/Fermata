@@ -2,14 +2,18 @@
   import { tick, startWork, startBreak, startIdle, resetTimers, restStage, POMODORO_SETTINGS, MAX_RATIO, type TimerState } from './lib/timer';
   import { loadState, saveState } from './lib/store';
   import { formatTime } from './lib/utils';
+  import { updateBrowserTab } from './lib/browserTab';
   import { untrack } from 'svelte';
   import { fade } from 'svelte/transition';
   import { getVersion } from '@tauri-apps/api/app';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, isTauri } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { check, type Update } from '@tauri-apps/plugin-updater';
   import { relaunch } from '@tauri-apps/plugin-process';
   import { ask, message } from '@tauri-apps/plugin-dialog';
+
+  // Mac app or the web version at app.fermata.study; both run this same code
+  const isDesktop = isTauri();
 
   let state = $state<TimerState>({
     mode: "idle",
@@ -22,12 +26,14 @@
     longBreakToCelebrate: false,
     ...POMODORO_SETTINGS,
     trayMode: "breakBalance",
-    theme: "dark",
+    // The web version starts out matching the visitor's system
+    theme: !isDesktop && matchMedia('(prefers-color-scheme: light)').matches ? "light" : "dark",
     alwaysOnTop: false,
     hasSeenIntro: false
   });
 
   let currentView = $state<'main' | 'settings' | 'howItWorks'>('main');
+  let webMenuOpen = $state(false);
 
   // Long break reward: what's on screen now, and whether the balance is doing its
   // little pop after the reward closes
@@ -57,9 +63,11 @@
         state.hasSeenIntro = true;
       }
       saveState(state);
-      invoke('set_always_on_top', { enabled: state.alwaysOnTop })
-        .then(() => invoke('bring_to_front'))
-        .catch(() => {});
+      if (isDesktop) {
+        invoke('set_always_on_top', { enabled: state.alwaysOnTop })
+          .then(() => invoke('bring_to_front'))
+          .catch(() => {});
+      }
       celebrateIfVisible();
     });
     let lastTickTime = Date.now();
@@ -75,6 +83,7 @@
         lastTickTime += elapsedSeconds * 1000;
         if (state.mode !== "idle") saveState(state);
         celebrateIfVisible();
+        if (!isDesktop) return;
 
         let trayText = "";
         if (state.trayMode === "breakBalance") trayText = formatTime(state.breakBalance);
@@ -118,28 +127,26 @@
     document.addEventListener("visibilitychange", handleVisibilityChange);
 
     // Sent by the native three dots menu
-    const unlistenSettings = listen('open-settings', () => { currentView = 'settings'; });
-    const unlistenHowItWorks = listen('open-how-it-works', () => { currentView = 'howItWorks'; });
-    const unlistenUpdates = listen('check-updates', () => checkForUpdates(true));
-
-    // Sent whenever the window is shown from the menu bar or by reopening the app
-    const unlistenShown = listen('window-shown', () => {
-      windowVisible = true;
-      catchUp();
-      celebrateIfVisible();
-    });
+    const unlisteners = !isDesktop ? [] : [
+      listen('open-settings', () => { currentView = 'settings'; }),
+      listen('open-how-it-works', () => { currentView = 'howItWorks'; }),
+      listen('check-updates', () => checkForUpdates(true)),
+      // Sent whenever the window is shown from the menu bar or by reopening the app
+      listen('window-shown', () => {
+        windowVisible = true;
+        catchUp();
+        celebrateIfVisible();
+      })
+    ];
 
     // Check quietly on launch, then every 6 hours for long-running sessions
-    checkForUpdates(false);
-    const updateCheckId = setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000);
+    if (isDesktop) checkForUpdates(false);
+    const updateCheckId = isDesktop ? setInterval(() => checkForUpdates(false), 6 * 60 * 60 * 1000) : undefined;
 
     return () => {
       clearInterval(intervalId);
       clearInterval(updateCheckId);
-      unlistenSettings.then((unlisten) => unlisten());
-      unlistenHowItWorks.then((unlisten) => unlisten());
-      unlistenUpdates.then((unlisten) => unlisten());
-      unlistenShown.then((unlisten) => unlisten());
+      unlisteners.forEach((unlistener) => unlistener.then((unlisten) => unlisten()));
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   });
@@ -269,12 +276,19 @@
 
   // Native popup menu under the three dots button
   async function openMenu(e: MouseEvent) {
+    if (!isDesktop) {
+      webMenuOpen = !webMenuOpen;
+      return;
+    }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     await invoke('show_menu', { x: rect.left, y: rect.bottom + 4 });
   }
 
   // No native app menu in a menu bar only app, so shortcuts are handled here
   function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') webMenuOpen = false;
+    // Browsers keep Cmd+W and Cmd+Q for themselves, so the web version leaves them alone
+    if (!isDesktop && e.key !== ',') return;
     if (!e.metaKey || e.ctrlKey || e.altKey) return;
     const key = e.key.toLowerCase();
     if (key === ',') currentView = 'settings';
@@ -286,12 +300,19 @@
 
   // The whole window drags, except its interactive parts
   function handleDrag(e: MouseEvent) {
+    if (!isDesktop) return;
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest('button, input, select, label, textarea')) return;
     invoke('start_drag');
   }
 
   let logoStage = $derived(restStage(state));
+
+  $effect(() => {
+    if (isDesktop) return;
+    updateBrowserTab(formatTime(state.breakBalance), logoStage);
+    document.documentElement.dataset.theme = state.theme;
+  });
 
   let longBreakProgress = $derived(
     Math.min(100, Math.round((state.sinceLongBreak / state.longBreakThreshold) * 100))
@@ -357,9 +378,14 @@
   </svg>
 {/snippet}
 
-<svelte:window onkeydown={handleKeydown} />
+<svelte:window
+  onkeydown={handleKeydown}
+  onclick={(e) => {
+    if (!(e.target as HTMLElement).closest('.menu-anchor')) webMenuOpen = false;
+  }}
+/>
 
-<main class="app" data-theme={state.theme} onmousedown={handleDrag} role="presentation">
+<main class="app" class:web={!isDesktop} data-theme={state.theme} onmousedown={handleDrag} role="presentation">
   {#if availableUpdate && !bannerDismissed}
     <div class="update-banner" role="status">
       <span class="banner-text">Update available <span class="banner-version">v{availableUpdate.version}</span></span>
@@ -381,6 +407,9 @@
           <path d="M14.5 6 L8.5 12 L14.5 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
         </svg>
       </button>
+    {:else if !isDesktop}
+      <!-- Nothing to close in a browser tab; keeps the logo centered -->
+      <span></span>
     {:else}
       <button class="chrome-btn" onclick={hideWindow} aria-label="Close window">
         <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -403,14 +432,24 @@
         </svg>
         <span class="tip tip-end">Reset Timers</span>
       </button>
-      <button class="chrome-btn" onclick={openMenu} aria-label="More">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <circle cx="5.5" cy="12" r="1.6" fill="currentColor" />
-          <circle cx="12" cy="12" r="1.6" fill="currentColor" />
-          <circle cx="18.5" cy="12" r="1.6" fill="currentColor" />
-        </svg>
-        <span class="tip tip-end">More</span>
-      </button>
+      <div class="menu-anchor">
+        <button class="chrome-btn" class:menu-open={webMenuOpen} onclick={openMenu} aria-label="More" aria-expanded={webMenuOpen}>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="5.5" cy="12" r="1.6" fill="currentColor" />
+            <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+            <circle cx="18.5" cy="12" r="1.6" fill="currentColor" />
+          </svg>
+          <span class="tip tip-end">More</span>
+        </button>
+        {#if webMenuOpen}
+          <div class="web-menu" role="menu">
+            <button role="menuitem" onclick={() => { currentView = 'settings'; webMenuOpen = false; }}>Settings</button>
+            <button role="menuitem" onclick={() => { currentView = 'howItWorks'; webMenuOpen = false; }}>How It Works</button>
+            <div class="web-menu-rule"></div>
+            <a role="menuitem" href="https://fermata.study">Get the Mac App</a>
+          </div>
+        {/if}
+      </div>
     </div>
   </header>
 
@@ -490,7 +529,13 @@
         <p><strong>Long breaks</strong> are a bonus: every {minutesText(Math.round(state.longBreakThreshold / 60))} of work adds {minutesText(Math.round(state.longBreakLength / 60))}. The progress bar shows how close you are, and the logo up top changes with it, from fermata to quarter, half, then whole rest.</p>
       </div>
       <div class="guide-footer">
-        <span class="hint">Closing this window keeps Fermata running in your menu bar.</span>
+        <span class="hint">
+          {#if isDesktop}
+            Closing this window keeps Fermata running in your menu bar.
+          {:else}
+            Your progress saves in this browser. Closing the tab stops the timer.
+          {/if}
+        </span>
         <button class="preset" onclick={() => currentView = 'main'}>Got It</button>
       </div>
     </section>
@@ -506,6 +551,7 @@
           </div>
         </div>
 
+        {#if isDesktop}
         <div class="field">
           <span class="eyebrow">Always on Top</span>
           <div class="segmented" role="group" aria-label="Always on Top">
@@ -524,6 +570,7 @@
             <option value="longBreak">Long break progress</option>
           </select>
         </div>
+        {/if}
 
         <div class="field">
           <label class="eyebrow" for="ratio">Work Ratio</label>
@@ -596,6 +643,27 @@
     border-radius: 16px;
     border: 1px solid var(--line);
     overflow: hidden;
+  }
+
+  /* Web version: a card on the page instead of a whole window */
+  .app.web {
+    width: min(470px, 100%);
+    height: auto;
+    min-height: 310px;
+  }
+
+  /* Plenty of room on a desktop browser, so show it larger */
+  @media (min-width: 900px) and (min-height: 620px) {
+    .app.web { zoom: 1.35; }
+  }
+
+  @media (max-width: 500px) {
+    .app.web .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* Touchscreens can't hover to reveal these */
+  @media (hover: none), (max-width: 500px) {
+    .app .chrome-btn { opacity: 1; }
   }
 
   .app[data-theme="light"] {
@@ -697,6 +765,45 @@
   .app:hover .chrome-btn { opacity: 1; }
   .chrome-btn:hover { color: var(--fg); background: var(--hover); }
   .chrome-btn:focus-visible { opacity: 1; outline: 1px solid var(--muted); }
+  .chrome-btn.menu-open { opacity: 1; color: var(--fg); background: var(--hover); }
+  .chrome-btn.menu-open .tip { display: none; }
+
+  /* Web version's menu, standing in for the Mac app's native one */
+  .menu-anchor { position: relative; }
+
+  .web-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    min-width: 150px;
+    padding: 5px;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+  }
+
+  .web-menu button,
+  .web-menu a {
+    padding: 5px 9px;
+    font-size: 0.85rem;
+    text-align: left;
+    text-decoration: none;
+    color: var(--fg);
+    border-radius: 6px;
+  }
+
+  .web-menu button:hover,
+  .web-menu a:hover { background: var(--hover); }
+
+  .web-menu-rule {
+    height: 1px;
+    margin: 4px 5px;
+    background: var(--line);
+  }
 
   .brand {
     display: flex;
@@ -894,6 +1001,8 @@
     font-style: italic;
     color: var(--fg);
   }
+
+  .guide-footer .preset { flex-shrink: 0; white-space: nowrap; }
 
   .guide-footer {
     display: flex;

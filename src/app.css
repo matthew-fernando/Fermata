@@ -10,6 +10,34 @@ body,
   background: transparent;
 }
 
+/* Web version: a normal scrolling page with the app centered as a card */
+html.web {
+  background: #0c0c0c;
+  color-scheme: dark;
+}
+
+html.web[data-theme="light"] {
+  background: #fbfbf9;
+  color-scheme: light;
+}
+
+html.web,
+html.web body {
+  height: auto;
+  min-height: 100%;
+  overflow: auto;
+}
+
+html.web #app {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  padding: 16px;
+}
+
 *,
 *::before,
 *::after {

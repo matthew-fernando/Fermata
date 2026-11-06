@@ -96,6 +96,7 @@
     }
 
     .nav-link:hover { color: var(--fg); }
+    .nav-links { display: flex; gap: 18px; }
 
     /* Hero */
     .hero {
@@ -582,7 +583,10 @@
         <svg aria-hidden="true"><use href="#i-fermata" /></svg>
         Fermata
       </a>
-      <a class="nav-link" href="https://github.com/matthew-fernando/Fermata">GitHub</a>
+      <span class="nav-links">
+        <a class="nav-link" href="https://app.fermata.study">Web Version</a>
+        <a class="nav-link" href="https://github.com/matthew-fernando/Fermata">GitHub</a>
+      </span>
     </nav>
   </div>
 
@@ -597,6 +601,7 @@
           <svg aria-hidden="true"><use href="#i-apple" /></svg>
           <span id="download-label">Download for Mac</span>
         </a>
+        <a class="btn btn-secondary" href="https://app.fermata.study">Use Web Version</a>
         <a class="btn btn-secondary" href="https://github.com/matthew-fernando/Fermata">
           <svg aria-hidden="true"><use href="#i-github" /></svg>
           View on GitHub
@@ -722,7 +727,7 @@
     <section class="block wrap" id="install">
       <span class="eyebrow">Install</span>
       <h2>Get Fermata</h2>
-      <p class="lede">Requires macOS. One download runs on both Apple Silicon and Intel Macs.</p>
+      <p class="lede">Requires macOS. One download runs on both Apple Silicon and Intel Macs. Not on a Mac? <a href="https://app.fermata.study">Use the web version</a> in any browser.</p>
 
       <div class="install">
         <div class="step">
@@ -808,7 +813,8 @@
       <span>Made by Matthew Fernando</span>
       <span>
         <a href="https://github.com/matthew-fernando/Fermata">GitHub</a> ·
-        <a href="https://github.com/matthew-fernando/Fermata/releases">Releases</a>
+        <a href="https://github.com/matthew-fernando/Fermata/releases">Releases</a> ·
+        <a href="https://app.fermata.study">Web Version</a>
       </span>
     </footer>
   </div>
