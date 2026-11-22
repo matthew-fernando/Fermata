@@ -1,7 +1,7 @@
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem, PredefinedMenuItem},
-    tray::{TrayIconBuilder, TrayIconEvent},
+    tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, LogicalPosition, Manager, RunEvent,
 };
 
@@ -20,10 +20,43 @@ fn show_main_window(app: &AppHandle) {
 }
 
 #[tauri::command]
-fn update_tray_text(app: tauri::AppHandle, text: String) {
+fn update_tray_text(app: tauri::AppHandle, text: String, negative: bool) {
     if let Some(tray) = app.tray_by_id("fermata-tray") {
         let _ = tray.set_title(Some(text));
+        #[cfg(target_os = "macos")]
+        if negative {
+            color_tray_title_red(&tray);
+        }
     }
+}
+
+// Tauri only sets plain titles, so for a negative balance this swaps in a red
+// title on the underlying status item, keeping the menu bar's own font.
+// set_title above replaces it with plain text again on the next update.
+#[cfg(target_os = "macos")]
+fn color_tray_title_red(tray: &TrayIcon) {
+    let _ = tray.with_inner_tray_icon(|inner| {
+        use objc2::{runtime::AnyObject, AnyThread, MainThreadMarker};
+        use objc2_app_kit::{NSColor, NSFontAttributeName, NSForegroundColorAttributeName};
+        use objc2_foundation::{NSAttributedString, NSDictionary, NSString};
+
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        let Some(button) = inner.ns_status_item().and_then(|item| item.button(mtm)) else { return };
+
+        let color = NSColor::systemRedColor();
+        let mut keys: Vec<&NSString> = vec![unsafe { NSForegroundColorAttributeName }];
+        let mut values: Vec<&AnyObject> = vec![color.as_ref()];
+        let font = button.font();
+        if let Some(font) = &font {
+            keys.push(unsafe { NSFontAttributeName });
+            values.push(font.as_ref());
+        }
+        let attributes = NSDictionary::from_slices(&keys, &values);
+        let title = unsafe {
+            NSAttributedString::initWithString_attributes(NSAttributedString::alloc(), &button.title(), Some(&attributes))
+        };
+        button.setAttributedTitle(&title);
+    });
 }
 
 // Menu bar images for each rest stage on the way to a long break.
@@ -130,12 +163,26 @@ pub fn run() {
             // As a template image macOS tints it to match the menu bar in light and dark mode
             let tray_icon = Image::from_bytes(tray_image_bytes("fermata"))?;
 
+            // Right-click menu; its "quit" item is handled in on_menu_event
+            let tray_menu = Menu::with_items(
+                app,
+                &[&MenuItem::with_id(app, "quit", "Quit Fermata", true, None::<&str>)?],
+            )?;
+
             TrayIconBuilder::with_id("fermata-tray")
                 .title("Fermata")
                 .icon(tray_icon)
                 .icon_as_template(true)
+                .menu(&tray_menu)
+                .show_menu_on_left_click(false)
                 .on_tray_icon_event(|tray, event| {
-                    if let TrayIconEvent::Click { .. } = event {
+                    // Left click opens the window; right click opens the menu
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
                         show_main_window(tray.app_handle());
                     }
                 })

@@ -92,7 +92,9 @@
         else if (state.trayMode === "longBreak") trayText = `${Math.floor((state.sinceLongBreak / state.longBreakThreshold) * 100)}%`;
 
         if (trayText !== lastTrayText) {
-          invoke('update_tray_text', { text: trayText }).catch(() => {});
+          // Red in the menu bar too, but only when it's showing the negative balance
+          const negative = state.trayMode === "breakBalance" && state.breakBalance <= -1;
+          invoke('update_tray_text', { text: trayText, negative }).catch(() => {});
           lastTrayText = trayText;
         }
 
@@ -102,7 +104,9 @@
           lastTrayIcon = trayIcon;
         }
       }
-    }, 1000);
+    // Faster than once a second so hidden-window timer throttling can't make the
+    // menu bar skip seconds; the time itself is always read from the clock
+    }, 250);
 
     // Count any seconds the interval missed while the window was hidden
     const catchUp = () => {
@@ -155,7 +159,8 @@
   async function checkForUpdates(manual: boolean) {
     let update: Update | null;
     try {
-      update = await check();
+      // Without a limit, a network that never answers would leave a manual check hanging
+      update = await check({ timeout: 15000 });
     } catch {
       if (manual) {
         await message(`You're on Fermata ${await getVersion()}. Couldn't check for updates, so check your internet connection and try again.`, {
@@ -457,7 +462,7 @@
     <section class="main-view">
       <div class="balance">
         <span class="eyebrow">Break Balance</span>
-        <span class="balance-value" class:pop={balancePop} onanimationend={() => balancePop = false}>{@render time(state.breakBalance)}</span>
+        <span class="balance-value" class:pop={balancePop} class:negative={state.breakBalance <= -1} onanimationend={() => balancePop = false}>{@render time(state.breakBalance)}</span>
       </div>
 
       <div class="stats">
@@ -561,9 +566,9 @@
         </div>
 
         <div class="field">
-          <label class="eyebrow" for="trayMode">Menu Bar</label>
+          <label class="eyebrow" for="trayMode">Menu Bar Text</label>
           <select id="trayMode" bind:value={state.trayMode} onchange={() => saveState(state)}>
-            <option value="icon">Icon only</option>
+            <option value="icon">None (icon only)</option>
             <option value="breakBalance">Break balance</option>
             <option value="currentPeriod">Current period</option>
             <option value="totalSession">Total session</option>
@@ -628,6 +633,7 @@
     --muted: #8c8c8a;
     --line: #2a2a2a;
     --hover: #1a1a1a;
+    --negative: #ff6b6b;
 
     --serif: "Iowan Old Style", "Palatino", "Palatino Linotype", "Book Antiqua", Georgia, serif;
 
@@ -672,6 +678,7 @@
     --muted: #767674;
     --line: #dcdcda;
     --hover: #efefed;
+    --negative: #d92d20;
   }
 
   button {
@@ -856,6 +863,9 @@
 
   /* After the long break reward closes, draw the eye to the new balance */
   .balance-value.pop { animation: balance-pop 0.7s ease; }
+
+  /* The one color in the app: a negative balance means you're over on breaks */
+  .balance-value.negative { color: var(--negative); }
 
   @keyframes balance-pop {
     40% { transform: scale(1.1); }

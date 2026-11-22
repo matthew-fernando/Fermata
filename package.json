@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
-    "release:json": "node scripts/latest-json.mjs"
+    "release:json": "node scripts/latest-json.mjs",
+    "release:build": "tauri build --target universal-apple-darwin --bundles app && ./scripts/make-dmg.sh"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.0",

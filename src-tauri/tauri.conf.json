@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Fermata",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "identifier": "com.matthewfernando.fermata",
   "build": {
     "frontendDist": "../dist",
@@ -18,7 +18,8 @@
         "height": 310,
         "decorations": false,
         "resizable": false,
-        "transparent": true
+        "transparent": true,
+        "backgroundThrottling": "disabled"
       }
     ],
     "security": {
